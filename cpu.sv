@@ -59,6 +59,9 @@ module cpu(
     logic PCWrite, if_id_write, hazard_Flush;
     logic [63:0] B_inter;
 
+    // branch prediciton 
+    logic branchPrediction, predictionWrite;
+
     // Stage 1: === Instruction Fetch === 
     instruction_fetch next_instr(
         .plusFour(if_plusFour),
@@ -71,6 +74,9 @@ module cpu(
         .branchPC(id_selectedBranchPC)
     );
 
+    logic branch_flush; // we want to flush when branch prediction = 1 (taken) and we are branching
+    and #(50ps) branch(branch_flush, id_BrTaken, branchPrediction);
+
     if_id_reg IF_ID(
         .clk,
         .reset,
@@ -81,7 +87,7 @@ module cpu(
         .Instr_out(id_Instr),
         .plusFour_out(id_plusFour),
         .if_id_write,  // freezes during stall
-        .Flush(1'b0) // 1 delay slot baseline: no flush after branch
+        .Flush(branch_flush) // EC: branch predictor -> OLD: 1 delay slot baseline: no flush after branch
     );
 
     // Stage 2: === Instruction Decode ===
@@ -296,6 +302,19 @@ module cpu(
         .id_ex_RegWrite(ex_RegWrite),
         .ex_mem_RegWrite(mem_RegWrite),
         .ex_mem_Rd(mem_Aw)
+    );
+
+    // only care about prediciton output if it's from a branch 
+    or #(50ps) prediction_enable(predictionWrite, id_BrTaken, id_UncondBr);
+
+    // branch predictor! 
+    // takens in whether prediction was right/wrong, and outputs a new prediction
+    branch_predictor control_hazard(
+        .clk,
+        .reset,
+        .in(id_BrTaken),       // actual branch outcome
+        .out(branchPrediction), // predicted branch outcome
+        .enable(predictionWrite)
     );
 
 endmodule
